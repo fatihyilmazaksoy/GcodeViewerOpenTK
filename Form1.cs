@@ -1,5 +1,6 @@
-using OpenTK.Graphics.OpenGL;
+using OpenTK;
 using OpenTK.GLControl;
+using OpenTK.Graphics.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -16,167 +17,164 @@ namespace GcodeViewerOpenTK
         private List<Vector2> toolPath = new List<Vector2>();
         private float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
 
-        // View transformation state
-        private float zoom = 1.0f;
-        private float panX = 0.0f, panY = 0.0f;
-        private float rotation = 0.0f;
-        private Point lastMousePos;
-        private bool isPanning = false;
-
         public Form1()
         {
             InitializeComponent();
 
-            // GLControl'u panelin içine ekle
+            // GLControl'u panel1'e ekle
             glControl = new GLControl();
-            glControl.Dock = DockStyle.Fill; // Paneli tamamen kaplar
+            glControl.Dock = DockStyle.Fill;
+            glControl.BackColor = Color.Black;
             panel1.Controls.Add(glControl);
 
-            // Eventleri baðla
+            // GLControl eventleri
             glControl.Paint += GlControl_Paint;
-            glControl.Resize += GlControl_Resize;
-            glControl.MouseWheel += GlControl_MouseWheel;
-            glControl.MouseDown += GlControl_MouseDown;
-            glControl.MouseMove += GlControl_MouseMove;
-            glControl.MouseUp += GlControl_MouseUp;
-            glControl.KeyDown += GlControl_KeyDown;
-            glControl.TabStop = true;
+            glControl.Resize += (s, e) => glControl.Invalidate();
 
-            BtnLoadFile.Click += BtnLoadFile_Click;
+            // Test: glControl görünürlüðü ve boyutu
+            this.Shown += (s, e) =>
+            {
+                MessageBox.Show(glControl.Visible ? "glControl görünür!" : "glControl görünmez!");
+                MessageBox.Show($"glControl.Width={glControl.Width}, Height={glControl.Height}");
+            };
         }
 
-        private void BtnLoadFile_Click(object sender, EventArgs e)
+        private void BtnLoadFile_Click(object? sender, EventArgs e)
         {
-            using var ofd = new OpenFileDialog
+            using OpenFileDialog ofd = new OpenFileDialog
             {
-                Filter = "Supported GCode Files (*.nc;*.tap;*.cnc;*.gcode;*.txt)|*.nc;*.tap;*.cnc;*.gcode;*.txt|All Files (*.*)|*.*"
+                Filter = "GCode Dosyalarý (*.nc;*.tap;*.cnc;*.gcode;*.txt)|*.nc;*.tap;*.cnc;*.gcode;*.txt|Tüm Dosyalar (*.*)|*.*"
             };
             if (ofd.ShowDialog() == DialogResult.OK)
             {
                 LoadGCodeFile(ofd.FileName);
+                MessageBox.Show($"toolPath.Count = {toolPath.Count}");
                 glControl.Invalidate();
             }
         }
 
+        // Hem X-Y hem X-Z hem de X veya Y/Z tek baþýna gelebilen GCode için genel loader
         private void LoadGCodeFile(string path)
         {
             toolPath.Clear();
             minX = minY = float.MaxValue;
             maxX = maxY = float.MinValue;
 
-            float x = 0, y = 0;
+            float x = 0, y = 0, z = 0;
+            bool useZ = false;
             var lines = File.ReadAllLines(path);
+
             foreach (var line in lines)
             {
                 var l = line.Trim();
-                if (l.StartsWith("G0") || l.StartsWith("G1"))
+
+                // Yorum veya boþ satýr atla
+                if (string.IsNullOrEmpty(l) || l.StartsWith(";") || l.StartsWith("(")) continue;
+
+                var parts = l.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                bool foundXY = false, foundXZ = false, foundAny = false;
+
+                foreach (var part in parts)
                 {
-                    var parts = l.Split(' ');
-                    foreach (var part in parts)
+                    if (part.StartsWith("X", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (part.StartsWith("X", StringComparison.OrdinalIgnoreCase))
-                            x = float.Parse(part.Substring(1), CultureInfo.InvariantCulture);
-                        if (part.StartsWith("Y", StringComparison.OrdinalIgnoreCase))
-                            y = float.Parse(part.Substring(1), CultureInfo.InvariantCulture);
+                        x = float.Parse(part.Substring(1), CultureInfo.InvariantCulture);
+                        foundAny = true;
                     }
+                    if (part.StartsWith("Y", StringComparison.OrdinalIgnoreCase))
+                    {
+                        y = float.Parse(part.Substring(1), CultureInfo.InvariantCulture);
+                        foundXY = true;
+                        foundAny = true;
+                    }
+                    if (part.StartsWith("Z", StringComparison.OrdinalIgnoreCase))
+                    {
+                        z = float.Parse(part.Substring(1), CultureInfo.InvariantCulture);
+                        foundXZ = true;
+                        foundAny = true;
+                    }
+                }
+
+                // Eðer hem X ve Y varsa XY düzlemine göre ekle
+                if (foundXY && l.Contains("X"))
+                {
                     toolPath.Add(new Vector2(x, y));
                     minX = Math.Min(minX, x); minY = Math.Min(minY, y);
                     maxX = Math.Max(maxX, x); maxY = Math.Max(maxY, y);
                 }
+                // Eðer hem X ve Z varsa XZ düzlemine göre ekle
+                else if (foundXZ && l.Contains("X"))
+                {
+                    toolPath.Add(new Vector2(x, z));
+                    minX = Math.Min(minX, x); minY = Math.Min(minY, z);
+                    maxX = Math.Max(maxX, x); maxY = Math.Max(maxY, z);
+                    useZ = true;
+                }
+                // Sadece X güncellenmiþse son Y/Z ile ekle (ör: "X..." satýrý)
+                else if (foundAny && l.Contains("X") && !l.Contains("Y") && !l.Contains("Z"))
+                {
+                    float addYorZ = useZ ? z : y;
+                    toolPath.Add(new Vector2(x, addYorZ));
+                }
+                // Sadece Y veya Z güncellenmiþse son X ile ekle (ör: "Y..." veya "Z..." satýrý)
+                else if (foundAny && !l.Contains("X"))
+                {
+                    float addYorZ = useZ ? z : y;
+                    toolPath.Add(new Vector2(x, addYorZ));
+                }
             }
-            CenterAndZoomToFit();
         }
 
-        private void CenterAndZoomToFit()
+        private void GlControl_Paint(object? sender, PaintEventArgs e)
         {
-            float dx = maxX - minX;
-            float dy = maxY - minY;
-            float padding = 0.1f * Math.Max(dx, dy);
-            float viewW = glControl.Width, viewH = glControl.Height;
-            float dataW = dx + padding, dataH = dy + padding;
-            zoom = 0.9f * Math.Min(viewW / dataW, viewH / dataH);
-            panX = (viewW / 2f) - ((minX + maxX) / 2f) * zoom;
-            panY = (viewH / 2f) - ((minY + maxY) / 2f) * zoom;
-        }
-
-        private void GlControl_Paint(object sender, PaintEventArgs e)
-        {
+            // Arkaplaný kýrmýzýya boya (test1)
             GL.Viewport(0, 0, glControl.Width, glControl.Height);
-            //  GL.ClearColor(Color.White);
-            GL.ClearColor(System.Drawing.Color.LightGray);
+            GL.ClearColor(Color.Red);
             GL.Clear(ClearBufferMask.ColorBufferBit);
+
+            // 2D ortografik projeksiyon
+            GL.MatrixMode(MatrixMode.Projection);
+            GL.LoadIdentity();
+            GL.Ortho(0, glControl.Width, glControl.Height, 0, -1, 1);
 
             GL.MatrixMode(MatrixMode.Modelview);
             GL.LoadIdentity();
 
-            // Pan & zoom & rotation
-            GL.Translate(panX, panY, 0);
-            GL.Translate(glControl.Width / 2f, glControl.Height / 2f, 0);
-            GL.Rotate(rotation, 0, 0, 1);
-            GL.Translate(-glControl.Width / 2f, -glControl.Height / 2f, 0);
-            GL.Scale(zoom, zoom, 1);
+            // Ortada mavi kare (test2)
+            int squareSize = 100;
+            float centerX = glControl.Width / 2f;
+            float centerY = glControl.Height / 2f;
+            float half = squareSize / 2f;
+            float x0 = centerX - half;
+            float y0 = centerY - half;
+            float x1 = centerX + half;
+            float y1 = centerY + half;
 
-            // Çizim
+            GL.Color3(Color.Blue);
+            GL.Begin(PrimitiveType.LineLoop);
+            GL.Vertex2(x0, y0); // Sol üst
+            GL.Vertex2(x1, y0); // Sað üst
+            GL.Vertex2(x1, y1); // Sað alt
+            GL.Vertex2(x0, y1); // Sol alt
+            GL.End();
+
+            // toolPath varsa takým yolu çiz (test3)
             if (toolPath.Count > 1)
             {
-                GL.Color3(Color.Blue);
+                GL.Color3(Color.Lime);
                 GL.Begin(PrimitiveType.LineStrip);
                 foreach (var pt in toolPath)
                 {
+                    // Ekranýn sol üstü (0,0). Gerekirse scale/offset uygula.
                     GL.Vertex2(pt.X, pt.Y);
                 }
                 GL.End();
             }
+
+            // Çizgi sayýsýný baþlýkta göster (test4)
+            this.Text = $"GcodeViewerOpenTK - Nokta Sayýsý: {toolPath.Count}";
+
             glControl.SwapBuffers();
-        }
-
-        private void GlControl_Resize(object sender, EventArgs e)
-        {
-            glControl.Invalidate();
-        }
-
-        private void GlControl_MouseWheel(object sender, MouseEventArgs e)
-        {
-            float oldZoom = zoom;
-            zoom *= (float)Math.Pow(1.1, e.Delta / 120.0);
-            panX = e.X - ((e.X - panX) * (zoom / oldZoom));
-            panY = e.Y - ((e.Y - panY) * (zoom / oldZoom));
-            glControl.Invalidate();
-        }
-
-        private void GlControl_MouseDown(object sender, MouseEventArgs e)
-        {
-            if (e.Button == MouseButtons.Left)
-            {
-                isPanning = true;
-                lastMousePos = e.Location;
-            }
-        }
-
-        private void GlControl_MouseMove(object sender, MouseEventArgs e)
-        {
-            if (isPanning)
-            {
-                panX += e.X - lastMousePos.X;
-                panY += e.Y - lastMousePos.Y;
-                lastMousePos = e.Location;
-                glControl.Invalidate();
-            }
-        }
-
-        private void GlControl_MouseUp(object sender, MouseEventArgs e)
-        {
-            if (e.Button == MouseButtons.Left)
-                isPanning = false;
-        }
-
-        private void GlControl_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.KeyCode == Keys.Left)
-                rotation -= 5f;
-            else if (e.KeyCode == Keys.Right)
-                rotation += 5f;
-            glControl.Invalidate();
         }
     }
 }

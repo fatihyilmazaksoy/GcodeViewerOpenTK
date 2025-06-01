@@ -22,47 +22,45 @@
 
         #region Windows Form Designer generated code
 
-        /// <summary>
-        ///  Required method for Designer support - do not modify
-        ///  the contents of this method with the code editor.
-        /// </summary>
         private void InitializeComponent()
         {
-            BtnLoadFile = new Button();
-            panel1 = new Panel();
-            SuspendLayout();
+            this.BtnLoadFile = new System.Windows.Forms.Button();
+            this.panel1 = new System.Windows.Forms.Panel();
+            this.SuspendLayout();
             // 
             // BtnLoadFile
             // 
-            BtnLoadFile.Location = new Point(35, 75);
-            BtnLoadFile.Name = "BtnLoadFile";
-            BtnLoadFile.Size = new Size(75, 23);
-            BtnLoadFile.TabIndex = 2;
-            BtnLoadFile.Text = "Dosya Aç";
+            this.BtnLoadFile.Location = new System.Drawing.Point(12, 12);
+            this.BtnLoadFile.Name = "BtnLoadFile";
+            this.BtnLoadFile.Size = new System.Drawing.Size(100, 30);
+            this.BtnLoadFile.TabIndex = 0;
+            this.BtnLoadFile.Text = "Dosya Aç";
+            this.BtnLoadFile.UseVisualStyleBackColor = true;
+            this.BtnLoadFile.Click += new System.EventHandler(this.BtnLoadFile_Click);
             // 
             // panel1
             // 
-            panel1.Location = new Point(169, 75);
-            panel1.Name = "panel1";
-            panel1.Size = new Size(529, 307);
-            panel1.TabIndex = 1;
+            this.panel1.Location = new System.Drawing.Point(140, 12);
+            this.panel1.Name = "panel1";
+            this.panel1.Size = new System.Drawing.Size(600, 400);
+            this.panel1.TabIndex = 1;
             // 
             // Form1
             // 
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(800, 450);
-            Controls.Add(panel1);
-            Controls.Add(BtnLoadFile);
-            Name = "Form1";
-            RightToLeftLayout = true;
-            Text = "GcodeViewerOpenTK";
-            ResumeLayout(false);
+            this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.ClientSize = new System.Drawing.Size(764, 431);
+            this.Controls.Add(this.panel1);
+            this.Controls.Add(this.BtnLoadFile);
+            this.Name = "Form1";
+            this.Text = "GcodeViewerOpenTK";
+            this.ResumeLayout(false);
+
         }
 
         #endregion
 
-        private Button BtnLoadFile;
-        private Panel panel1;
+        private System.Windows.Forms.Button BtnLoadFile;
+        private System.Windows.Forms.Panel panel1;
     }
 }
