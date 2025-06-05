@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Windows.Forms;
 
@@ -35,7 +36,7 @@ namespace GcodeViewerOpenTK
 
         private void SetupEventHandlers()
         {
-            glControl1.Load += GlControl_Load;  // Changed from GLControl_Load to GlControl_Load
+            glControl1.Load += GlControl_Load;
             glControl1.Paint += GlControl_Paint;
             glControl1.Resize += GlControl_Resize;
             BtnLoadFile.Click += BtnLoadFile_Click;
@@ -48,12 +49,13 @@ namespace GcodeViewerOpenTK
             glControl1.DoubleClick += GlControl_DoubleClick;
         }
 
-        private void GlControl_Load(object sender, EventArgs e)  // Added this missing method
+        private void GlControl_Load(object sender, EventArgs e)
         {
             InitializeOpenGLSettings();
         }
 
-        private static void InitializeOpenGLSettings(){
+        private static void InitializeOpenGLSettings()
+        {
             try
             {
                 GL.ClearColor(Color.Black);
@@ -69,46 +71,58 @@ namespace GcodeViewerOpenTK
             }
         }
 
-        private void GLControl_Resize(object sender, EventArgs e) {
+        private void GlControl_Resize(object sender, EventArgs e)
+        {
             if (!glControl1.IsDisposed && glControl1.Visible)
             {
                 glControl1.MakeCurrent();
                 GL.Viewport(0, 0, glControl1.Width, glControl1.Height);
-                glControl1.Invalidate();            }
+                glControl1.Invalidate();
+            }
         }
+
         #region Mouse Interaction Handlers
-        private void GLControl_MouseDown(object sender, MouseEventArgs e)  {
+        private void GlControl_MouseDown(object sender, MouseEventArgs e)
+        {
             lastMousePos = e.Location;
 
-            if (e.Button == MouseButtons.Left)  {
+            if (e.Button == MouseButtons.Left)
+            {
                 isDragging = true;
             }
-            else if (e.Button == MouseButtons.Right) {
+            else if (e.Button == MouseButtons.Right)
+            {
                 isRotating = true;
             }
         }
-        private void GLControl_MouseMove(object sender, MouseEventArgs e) {
+        private void GlControl_MouseMove(object sender, MouseEventArgs e)
+        {
             if (!fileLoaded) return;
             float dx = e.X - lastMousePos.X;
             float dy = e.Y - lastMousePos.Y;
-            if (isDragging)            {
-                panOffset.X += dx * 0.01f / zoom;
-                panOffset.Y -= dy * 0.01f / zoom;
+            if (isDragging)
+            {
+                // Pan: Pan offset is after zoom, so divide by zoom
+                panOffset.X += dx / (float)glControl1.Width * (maxX - minX);
+                panOffset.Y -= dy / (float)glControl1.Height * (maxY - minY);
                 glControl1.Invalidate();
             }
-            else if (isRotating)            {
+            else if (isRotating)
+            {
                 rotationAngle += dx * 0.5f;
                 glControl1.Invalidate();
             }
             lastMousePos = e.Location;
         }
 
-        private void GLControl_MouseUp(object sender, MouseEventArgs e)        {
+        private void GlControl_MouseUp(object sender, MouseEventArgs e)
+        {
             isDragging = false;
             isRotating = false;
         }
 
-        private void GLControl_MouseWheel(object sender, MouseEventArgs e)        {
+        private void GlControl_MouseWheel(object sender, MouseEventArgs e)
+        {
             if (!fileLoaded) return;
 
             float zoomFactor = e.Delta > 0 ? 1.1f : 0.9f;
@@ -117,7 +131,8 @@ namespace GcodeViewerOpenTK
             glControl1.Invalidate();
         }
 
-        private void GLControl_DoubleClick(object sender, EventArgs e)        {
+        private void GlControl_DoubleClick(object sender, EventArgs e)
+        {
             zoom = 1.0f;
             panOffset = Vector2.Zero;
             rotationAngle = 0f;
@@ -125,7 +140,7 @@ namespace GcodeViewerOpenTK
         }
         #endregion
 
-        private void BtnLoadFile_Click(object? sender, EventArgs e)        
+        private void BtnLoadFile_Click(object? sender, EventArgs e)
         {
             using var ofd = new OpenFileDialog
             {
@@ -203,11 +218,21 @@ namespace GcodeViewerOpenTK
 
         private static bool ShouldSkipLine(string line)
         {
-            if (string.IsNullOrEmpty(line)) return true;
-
-            char firstChar = line[0];
-            return firstChar is ';' or '(' or 'M' or 'S' or 'G' &&
-                   (line.StartsWith("G21") || line.StartsWith("G90"));
+            if (string.IsNullOrWhiteSpace(line))
+                return true;
+            if (line.StartsWith(";") || line.StartsWith("("))
+                return true;
+            if (line.StartsWith("M3") || line.StartsWith("S"))
+                return true;
+            if (line.StartsWith("G21") || line.StartsWith("G90"))
+                return true;
+            if (line.StartsWith("T") || line.StartsWith("M30"))
+                return true;
+            if (line.StartsWith("F") || line.StartsWith("G54"))
+                return true;
+            if (line.StartsWith("17") || line.StartsWith("G94"))
+                return true;
+            return false;
         }
 
         private static void ParseCoordinates(string line, ref float x, ref float y, ref float z,
@@ -289,7 +314,7 @@ namespace GcodeViewerOpenTK
             }
         }
 
-        private void GLControl_Paint(object? sender, PaintEventArgs e)
+        private void GlControl_Paint(object sender, PaintEventArgs e)
         {
             if (glControl1.IsDisposed) return;
 
@@ -328,13 +353,14 @@ namespace GcodeViewerOpenTK
             GL.MatrixMode(MatrixMode.Modelview);
             GL.LoadIdentity();
 
-            GL.Translate(panOffset.X, panOffset.Y, 0);
-            GL.Scale(zoom, zoom, 1.0f);
-
+            // Transform order: Zoom, then Pan (for more intuitive behavior)
             float centerX = (minX + maxX) / 2;
             float centerY = (minY + maxY) / 2;
+
             GL.Translate(centerX, centerY, 0);
             GL.Rotate(rotationAngle, 0, 0, 1);
+            GL.Scale(zoom, zoom, 1.0f);
+            GL.Translate(panOffset.X, panOffset.Y, 0);
             GL.Translate(-centerX, -centerY, 0);
 
             GL.Color3(Color.LimeGreen);
@@ -357,6 +383,8 @@ namespace GcodeViewerOpenTK
 
         private void SetupProjectionMatrix()
         {
+            if (glControl1.Height == 0) return; // Prevent division by zero
+
             float width = Math.Max(1, maxX - minX);
             float height = Math.Max(1, maxY - minY);
             float marginX = width * 0.1f;
@@ -437,15 +465,43 @@ namespace GcodeViewerOpenTK
             GL.End();
         }
 
+        // --- Text Drawing Helpers ---
+        private void Prepare2DTextRendering()
+        {
+            GL.MatrixMode(MatrixMode.Projection);
+            GL.PushMatrix();
+            GL.LoadIdentity();
+            GL.Ortho(0, glControl1.Width, glControl1.Height, 0, -1, 1); // Top-left is (0,0)
+
+            GL.MatrixMode(MatrixMode.Modelview);
+            GL.PushMatrix();
+            GL.LoadIdentity();
+
+            GL.Enable(EnableCap.Blend);
+            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+        }
+
+        private void Cleanup2DTextRendering()
+        {
+            GL.MatrixMode(MatrixMode.Modelview);
+            GL.PopMatrix();
+
+            GL.MatrixMode(MatrixMode.Projection);
+            GL.PopMatrix();
+
+            GL.Disable(EnableCap.Blend);
+        }
+
         private void DrawInfoText()
         {
             string msg = "Load GCode to view tool path";
             SizeF textSize = TextRenderer.MeasureText(msg, Font);
-            DrawText(msg, (int)(glControl1.Width / 2 - textSize.Width / 2),
-                    (int)(glControl1.Height / 2 - textSize.Height / 2));
+            int x = (int)(glControl1.Width / 2 - textSize.Width / 2);
+            int y = (int)(glControl1.Height / 2 - textSize.Height / 2);
+            DrawText(msg, x, y);
         }
 
-        private static void DrawText(string text, int x, int y)
+        private void DrawText(string text, int x, int y)
         {
             using var bmp = new Bitmap(1, 1);
             using var g = Graphics.FromImage(bmp);
@@ -455,10 +511,13 @@ namespace GcodeViewerOpenTK
             using (var textG = Graphics.FromImage(textBmp))
             {
                 textG.Clear(Color.Transparent);
+                textG.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
                 textG.DrawString(text, SystemFonts.DefaultFont, Brushes.White, 0, 0);
             }
 
+            Prepare2DTextRendering();
             UploadTextureAndDraw(textBmp, x, y);
+            Cleanup2DTextRendering();
         }
 
         private static void UploadTextureAndDraw(Bitmap bitmap, int x, int y)
